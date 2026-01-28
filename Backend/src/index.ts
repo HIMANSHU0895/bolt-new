@@ -21,69 +21,39 @@ app.use(express.json());
 app.post("/template", async (req, res) => {
   try {
     const prompt = req.body.prompt;
+    if (!prompt) return res.status(400).json({ error: "Prompt missing" });
 
     const completion = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
+      model: "llama-3.1-8b-instant",
+      temperature: 0,
+      max_tokens: 5,
       messages: [
-        {
-          role: "system",
-          content:
-            "Return either node or react based on what you think this project should be. Only return a single word either 'node' or 'react'. Do not return anything extra.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      max_tokens: 10,
+        { role: "system", content: "Classify the project. Reply with exactly ONE word: react or node. No punctuation. No explanation." },
+        { role: "user", content: prompt }
+      ]
     });
 
-    const answer =
-      completion.choices[0]?.message?.content?.trim().toLowerCase();
+    console.log("GROQ FULL RESPONSE:", JSON.stringify(completion, null, 2));
 
-    if (answer === "react") {
-      return res.json({
-        prompts: [
-          BASE_PROMPT,
-          `Here is an artifact that contains all files of the project visible to you.
-Consider the contents of ALL files in the project.
+    const raw = completion.choices?.[0]?.message?.content ?? "";
+    const answer = raw.trim().toLowerCase();
 
-${reactBasePrompt}
-
-Here is a list of files that exist on the file system but are not being shown to you:
-
-  - .gitignore
-  - package-lock.json
-`,
-        ],
-        uiPrompts: [reactBasePrompt],
-      });
+    if (answer.includes("react")) {
+      return res.json({ prompts: [BASE_PROMPT, reactBasePrompt], uiPrompts: [reactBasePrompt] });
     }
 
-    if (answer === "node") {
-      return res.json({
-        prompts: [
-          `Here is an artifact that contains all files of the project visible to you.
-Consider the contents of ALL files in the project.
-
-${nodeBasePrompt}
-
-Here is a list of files that exist on the file system but are not being shown to you:
-
-  - .gitignore
-  - package-lock.json
-`,
-        ],
-        uiPrompts: [nodeBasePrompt],
-      });
+    if (answer.includes("node")) {
+      return res.json({ prompts: [BASE_PROMPT, nodeBasePrompt], uiPrompts: [nodeBasePrompt] });
     }
 
-    return res.status(403).json({ message: "You cant access this" });
+    return res.status(422).json({ error: "Unable to classify project type", llmResponse: answer });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Groq request failed" });
   }
 });
+
 
 /**
  * Main chat endpoint
